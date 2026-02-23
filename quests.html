@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CODEX</title>
+
+<style>
+body{
+    background:#05060a;
+    color:#e2e8f0;
+    font-family:Segoe UI, sans-serif;
+    display:flex;
+    justify-content:center;
+    padding:20px;
+    flex-direction:column;
+    align-items:center;
+}
+
+/* HUD fluida */
+.container{
+    width:100%;
+    max-width:430px;
+}
+
+@media (max-width:480px){
+    body{ padding:10px; }
+}
+
+.settingsBtn{
+    position:fixed;
+    top:15px;
+    left:15px;
+    background:#111827;
+    border:none;
+    border-radius:10px;
+    padding:10px;
+    cursor:pointer;
+}
+.settingsBtn:hover{ background:#1f2937; }
+
+.settingsMenu{
+    position:fixed;
+    top:60px;
+    left:15px;
+    background:#0b0e17;
+    border:1px solid #1f2937;
+    padding:15px;
+    border-radius:12px;
+    display:none;
+}
+
+.box{
+    background:#0b0e17;
+    border:1px solid #1f2937;
+    border-radius:16px;
+    padding:20px;
+    box-shadow:0 0 25px rgba(0,0,0,0.9);
+    margin-bottom:18px;
+}
+
+h1{text-align:center;color:#22c55e;}
+h2{color:#ffd700;margin-bottom:10px;text-align:center;}
+
+.tabs{ display:flex; margin:15px 0; }
+
+.tab{
+    flex:1;
+    margin:2px;
+    padding:8px;
+    background:#111827;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    color:#94a3b8;
+    font-size:14px;
+}
+.tab.active{ background:#22c55e; color:#fff; }
+
+.bar{
+    height:18px;
+    background:#111827;
+    border-radius:10px;
+    overflow:hidden;
+    margin-bottom:10px;
+}
+
+.progress{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg,#22c55e,#4ade80);
+    transition: width 0.6s ease-out;
+    position:relative;
+    overflow:hidden;
+}
+
+.progress::after{
+    content:"";
+    position:absolute;
+    top:0;
+    left:-40%;
+    width:40%;
+    height:100%;
+    background:linear-gradient(120deg,transparent,rgba(255,255,255,0.45),transparent);
+    transform:skewX(-25deg);
+    animation: shineBar 2.5s linear infinite;
+}
+
+@keyframes shineBar{
+    0%{ left:-40%; }
+    100%{ left:140%; }
+}
+
+.bar.gainXP{
+    animation: pulseGlow 0.6s ease;
+}
+
+@keyframes pulseGlow{
+    0%{ box-shadow:0 0 0px #22c55e; }
+    50%{ box-shadow:0 0 14px #4ade80; }
+    100%{ box-shadow:0 0 0px #22c55e; }
+}
+
+.bar.levelUp{
+    animation: levelFlash 0.5s ease;
+}
+
+@keyframes levelFlash{
+    0%{ box-shadow:0 0 0px #22c55e; }
+    50%{ box-shadow:0 0 18px #22c55e; }
+    100%{ box-shadow:0 0 0px #22c55e; }
+}
+
+input{
+    width:100%;
+    margin-top:6px;
+    padding:10px;
+    border-radius:8px;
+    border:none;
+    background:#111827;
+    color:#fff;
+    font-size:14px;
+}
+
+button{
+    margin-top:8px;
+    padding:10px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    background:#22c55e;
+    color:white;
+    font-size:14px;
+}
+
+.quest{
+    background:#111827;
+    padding:12px;
+    margin-top:10px;
+    border-radius:10px;
+}
+
+.principal{border-left:4px solid #22c55e;}
+.secundaria{border-left:4px solid #3b82f6;}
+.diaria{border-left:4px solid #f59e0b;}
+
+.conquista{
+    border-left:4px solid gold;
+    background:linear-gradient(135deg,#1a1200,#332200);
+    box-shadow:0 0 12px rgba(255,215,0,0.3);
+    position:relative;
+    overflow:hidden;
+}
+
+.conquista::before{
+    content:"";
+    position:absolute;
+    top:-50%;
+    left:-50%;
+    width:200%;
+    height:200%;
+    background:linear-gradient(120deg,transparent,rgba(255,215,0,0.25),transparent);
+    transform:rotate(25deg);
+    animation:shine 4s linear infinite;
+}
+
+@keyframes shine{
+    0%{transform:translateX(-100%) rotate(25deg);}
+    100%{transform:translateX(100%) rotate(25deg);}
+}
+
+.conquista span{
+    font-weight:bold;
+    font-size:15px;
+}
+
+.unlocked{
+    box-shadow:0 0 20px gold, 0 0 40px rgba(255,215,0,0.6);
+    transform:scale(1.02);
+}
+
+.badge{
+    font-size:10px;
+    background:gold;
+    color:black;
+    padding:2px 6px;
+    border-radius:6px;
+    margin-left:6px;
+}
+
+.completed{ text-decoration:line-through; opacity:0.6; }
+
+.extraInfo{
+    font-size:12px;
+    color:#94a3b8;
+    margin-top:4px;
+}
+.overdue{ color:#ef4444; font-weight:bold; }
+
+.btnContainer{ display:flex; gap:8px; margin-top:6px; }
+.deleteBtn{ background:#ef4444; }
+.reactivateBtn{ background:#f59e0b; }
+</style>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+
+<script>
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAPJtsVX2vHsZNcEtQLl62YoSKkrjqmv3k",
+  authDomain: "codex-561a5.firebaseapp.com",
+  projectId: "codex-561a5",
+  storageBucket: "codex-561a5.firebasestorage.app",
+  messagingSenderId: "60217451001",
+  appId: "1:60217451001:web:6a145a5708030cea821d28",
+  measurementId: "G-P8GWKYD784"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+</script>
+</head>
+<body>
+
+<!-- Login/Signup -->
+<div class="box" id="authBox">
+  <h1>Login / Cadastro</h1>
+  <div style="position:relative;">
+    <input id="email" placeholder="E-mail">
+  </div>
+  <div style="position:relative;">
+    <input id="password" type="password" placeholder="Senha">
+    <button type="button" 
+            onclick="togglePassword()" 
+            style="position:absolute; right:5px; top:5px; padding:5px; font-size:14px; cursor:pointer; z-index:2;">
+      👁️
+    </button>
+  </div>
+  <button onclick="signupUser()">Cadastrar</button>
+  <button onclick="loginUser()">Login</button>
+</div>
+
+<!-- Configurações -->
+<button class="settingsBtn" onclick="toggleMenu()">⚙️</button>
+<div class="settingsMenu" id="menu">
+    <button onclick="logout()">🔒 Logout</button>
+    <button onclick="resetarTudo()">🔄 Resetar progresso</button>
+</div>
+
+<!-- Container principal -->
+<div class="container" id="mainApp" style="display:none;">
+
+<div class="box">
+<h1>🎮 Diário de Missões</h1>
+<div>
+Nível: <span id="level"></span> |
+XP: <span id="xp"></span>/<span id="next"></span>
+<div class="bar"><div class="progress" id="progress"></div></div>
+</div>
+
+<div class="tabs">
+<button class="tab active" onclick="switchTab('principal',event)">⭐ Principal</button>
+<button class="tab" onclick="switchTab('secundaria',event)">🔹 Secundário</button>
+<button class="tab" onclick="switchTab('diaria',event)">🔥 Diário</button>
+</div>
+
+<input id="questText" placeholder="Nome da missão">
+<input id="rewardText" placeholder="Recompensa extra (opcional)">
+<input type="date" id="dueDate">
+<button onclick="addQuest()">Adicionar missão</button>
+
+<div id="questList"></div>
+</div>
+
+<div class="box">
+<h2>🏆 CONQUISTAS LENDÁRIAS</h2>
+<input id="achievementText" placeholder="Nova conquista">
+<button onclick="addAchievement()">Adicionar conquista</button>
+<div id="achievementList"></div>
+</div>
+
+</div>
+
+<script>
+let xp=0, level=1, nextLevel=100;
+let quests=[], conquistas=[];
+let currentTab="principal";
+let lastDailyReset=null;
+let currentUserEmail=null;
+
+let passwordVisible = false;
+
+// Botão de mostrar/esconder senha
+function togglePassword(){
+  const passInput = document.getElementById("password");
+  passwordVisible = !passwordVisible;
+  passInput.type = passwordVisible ? "text" : "password";
+}
+
+// Cadastro de usuário
+function signupUser(){
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  if(!email || !password) return alert("Preencha e-mail e senha");
+
+  auth.createUserWithEmailAndPassword(email,password)
+      .then(()=> {
+          currentUserEmail = email;
+          db.collection("users").doc(email).set({xp:0, level:1, quests:[], conquistas:[]});
+          document.getElementById("authBox").style.display="none";
+          document.getElementById("mainApp").style.display="block";
+          loadData(email);
+      })
+      .catch(err => alert(err.message));
+}
+
+// Login de usuário
+function loginUser(){
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  if(!email || !password) return alert("Preencha e-mail e senha");
+
+  auth.signInWithEmailAndPassword(email,password)
+      .then(()=> {
+          currentUserEmail = email;
+          document.getElementById("authBox").style.display="none";
+          document.getElementById("mainApp").style.display="block";
+          loadData(email);
+      })
+      .catch(err => alert(err.message));
+}
+
+// Logout
+function logout(){
+  auth.signOut().then(()=> location.reload());
+}
+
+function saveData(){
+    if(!currentUserEmail) return;
+    db.collection("users").doc(currentUserEmail).set({
+        xp, level, quests, conquistas
+    });
+}
+
+function loadData(email){
+    db.collection("users").doc(email).get().then(doc=>{
+        if(doc.exists){
+            const data=doc.data();
+            quests=data.quests||[];
+            conquistas=data.conquistas||[];
+            xp=data.xp||0;
+            level=data.level||1;
+            updateStatus();
+            render();
+        }
+    });
+}
+
+function resetarTudo(){
+    if(!currentUserEmail) return;
+    if(confirm("Tem certeza que deseja resetar tudo?")){
+        db.collection("users").doc(currentUserEmail).set({
+            xp:0,
+            level:1,
+            quests:[],
+            conquistas:[]
+        });
+        xp = 0;
+        level = 1;
+        nextLevel = 100; // <--- ADICIONE ESTA LINHA
+        quests = [];
+        conquistas = [];
+        updateStatus();
+        render();
+    }
+}
+
+function updateStatus(){
+    document.getElementById("xp").innerText=xp;
+    document.getElementById("level").innerText=level;
+    document.getElementById("next").innerText=nextLevel;
+    document.getElementById("progress").style.width=(xp/nextLevel*100)+"%";
+}
+
+function gainXP(amount){
+    xp+=amount;
+    const bar=document.querySelector(".bar");
+    bar.classList.add("gainXP");
+    setTimeout(()=>bar.classList.remove("gainXP"),600);
+    while(xp>=nextLevel){
+        xp-=nextLevel;
+        level++;
+        nextLevel=Math.floor(nextLevel*1.3);
+        bar.classList.add("levelUp");
+        setTimeout(()=>bar.classList.remove("levelUp"),500);
+        alert("🎉 Subiu de nível!");
+    }
+    updateStatus();
+    saveData();
+}
+
+function switchTab(tab,e){
+    currentTab=tab;
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    e.target.classList.add("active");
+    render();
+}
+
+function addQuest(){
+    const text=document.getElementById("questText").value;
+    const reward=document.getElementById("rewardText").value;
+    const due=document.getElementById("dueDate").value;
+    if(!text) return;
+
+    const xpReward=currentTab==="principal"?100:currentTab==="secundaria"?30:20;
+
+    quests.push({id:Date.now(),text,type:currentTab,done:false,xpReward,reward,dueDate:due});
+    document.getElementById("questText").value="";
+    document.getElementById("rewardText").value="";
+    document.getElementById("dueDate").value="";
+    saveData();
+    render();
+}
+
+function addAchievement(){
+    const text=document.getElementById("achievementText").value;
+    if(!text) return;
+    conquistas.push({id:Date.now(),text,done:false});
+    document.getElementById("achievementText").value="";
+    saveData();
+    render();
+}
+
+function checkDailyReset(){
+    const today=new Date().toDateString();
+    if(lastDailyReset!==today){
+        quests.forEach(q=>{if(q.type==="diaria") q.done=false;});
+        lastDailyReset=today;
+        saveData();
+    }
+}
+
+function render(){
+    checkDailyReset();
+    const qList=document.getElementById("questList");
+    const aList=document.getElementById("achievementList");
+    qList.innerHTML="";
+    aList.innerHTML="";
+
+quests.filter(q => q.type === currentTab).forEach(q => {
+    const div = document.createElement("div");
+    div.className = "quest " + q.type;
+
+    const span = document.createElement("span");
+    span.innerText = q.text;
+
+    // ✅ Indicação de missão diária completa
+    if (q.type === "diaria" && q.done) {
+        span.innerText += " ✅"; // Adiciona o ✅ ao lado do texto
+        span.classList.add("completed"); // Mantém o estilo de completed
+    }
+
+    const info = document.createElement("div");
+    info.className = "extraInfo";
+    if (q.reward) info.innerHTML += "🎁 " + q.reward + "<br>";
+    if (q.dueDate) {
+        const due = new Date(q.dueDate);
+        const today = new Date();
+        if (today > due && !q.done) info.innerHTML += "⏰ <span class='overdue'>ATRASADA</span>";
+        else info.innerHTML += "⏰ " + due.toLocaleDateString();
+    }
+
+    const btnContainer = document.createElement("div");
+    btnContainer.className = "btnContainer";
+
+    const done = document.createElement("button");
+    done.innerText = "✔";
+    done.onclick = () => {
+        if (q.done) return;
+        if (q.type === "diaria") q.done = true;
+        gainXP(q.xpReward);
+        if (q.reward) alert("🎁 Recompensa: " + q.reward);
+        if (q.type !== "diaria") quests = quests.filter(x => x.id !== q.id);
+        saveData();
+        render();
+    };
+
+    const del = document.createElement("button");
+    del.innerText = "X";
+    del.className = "deleteBtn";
+    del.onclick = () => {
+        quests = quests.filter(x => x.id !== q.id);
+        saveData();
+        render();
+    };
+
+    const reactivate = document.createElement("button");
+    reactivate.innerText = "♻️";
+    reactivate.className = "reactivateBtn";
+    reactivate.onclick = () => {
+        if (q.type === "diaria") { q.done = false; saveData(); render(); }
+    };
+    if (q.type === "diaria") btnContainer.append(done, del, reactivate);
+    else btnContainer.append(done, del);
+
+    div.append(span, info, btnContainer);
+    qList.appendChild(div);
+});
+
+        conquistas.forEach(c=>{
+        const div=document.createElement("div");
+        div.className="quest conquista";
+        if(c.done) div.classList.add("unlocked");
+
+        const span=document.createElement("span");
+        span.innerText=c.text;
+
+        if(c.done){
+            const badge=document.createElement("span");
+            badge.className="badge";
+            badge.innerText="DESBLOQUEADA";
+            span.appendChild(badge);
+        }
+
+        const doneBtn=document.createElement("button");
+        doneBtn.innerText="🏆";
+        doneBtn.onclick=()=>{
+            if(c.done) return;
+            c.done=true;
+            gainXP(200);
+            alert("🏆 CONQUISTA DESBLOQUEADA!");
+            saveData();
+            render();
+        };
+
+        const del=document.createElement("button");
+        del.innerText="X";
+        del.className="deleteBtn";
+        del.onclick=()=>{
+            conquistas=conquistas.filter(x=>x.id!==c.id);
+            saveData();
+            render();
+        };
+
+        const btnContainer=document.createElement("div");
+        btnContainer.className="btnContainer";
+        btnContainer.append(doneBtn,del);
+
+        div.append(span,btnContainer);
+        aList.appendChild(div);
+    });
+}
+
+// MENU ⚙️
+function toggleMenu(){
+  const menu = document.getElementById("menu");
+  menu.style.display = menu.style.display === "block" ? "none" : "block";
+}
+</script>
+</body>
+</html>
