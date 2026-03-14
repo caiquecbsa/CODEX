@@ -77,6 +77,27 @@ h2{color:#ffd700;margin-bottom:10px;text-align:center;}
 }
 .tab.active{ background:#22c55e; color:#fff; }
 
+/* Seletor de dificuldade */
+.difficulty-selector{
+    display:flex;
+    gap:8px;
+    margin:10px 0;
+}
+.difficulty-btn{
+    flex:1;
+    padding:8px;
+    background:#111827;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    color:#94a3b8;
+    font-size:14px;
+}
+.difficulty-btn.active{
+    background:#22c55e;
+    color:#fff;
+}
+
 .bar{
     height:18px;
     background:#111827;
@@ -142,6 +163,14 @@ input{
     font-size:14px;
 }
 
+/* Label para campos */
+.input-label{
+    font-size:12px;
+    color:#94a3b8;
+    margin-top:10px;
+    margin-bottom:2px;
+}
+
 button{
     margin-top:8px;
     padding:10px;
@@ -161,8 +190,17 @@ button{
 }
 
 .principal{border-left:4px solid #22c55e;}
-.secundaria{border-left:4px solid #3b82f6;}
 .diaria{border-left:4px solid #f59e0b;}
+.shared-quest{
+    border-left:4px solid #3b82f6;
+    animation: pulseInbox 2s infinite;
+}
+
+@keyframes pulseInbox{
+    0%{ box-shadow:0 0 0px #3b82f6; }
+    50%{ box-shadow:0 0 10px #3b82f6; }
+    100%{ box-shadow:0 0 0px #3b82f6; }
+}
 
 .conquista{
     border-left:4px solid gold;
@@ -214,12 +252,24 @@ button{
     font-size:12px;
     color:#94a3b8;
     margin-top:4px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+}
+.extraInfo span{
+    display:inline-flex;
+    align-items:center;
+    gap:3px;
 }
 .overdue{ color:#ef4444; font-weight:bold; }
 
 .btnContainer{ display:flex; gap:8px; margin-top:6px; }
 .deleteBtn{ background:#ef4444; }
 .reactivateBtn{ background:#f59e0b; }
+.shareBtn{ background:#3b82f6 !important; }
+.shareBtn:hover{ background:#2563eb !important; }
+.acceptBtn{ background:#22c55e !important; }
+.rejectBtn{ background:#ef4444 !important; }
 </style>
 
 <!-- Firebase -->
@@ -282,14 +332,24 @@ XP: <span id="xp"></span>/<span id="next"></span>
 </div>
 
 <div class="tabs">
-<button class="tab active" onclick="switchTab('principal',event)">⭐ Principal</button>
-<button class="tab" onclick="switchTab('secundaria',event)">🔹 Secundário</button>
+<button class="tab active" onclick="switchTab('principal',event)">⭐ Missões</button>
 <button class="tab" onclick="switchTab('diaria',event)">🔥 Diário</button>
 </div>
 
 <input id="questText" placeholder="Nome da missão">
 <input id="rewardText" placeholder="Recompensa extra (opcional)">
+
+<!-- Seletor de dificuldade -->
+<div class="difficulty-selector">
+  <button class="difficulty-btn active" onclick="setDifficulty('facil')">Fácil (20 XP)</button>
+  <button class="difficulty-btn" onclick="setDifficulty('medio')">Médio (50 XP)</button>
+  <button class="difficulty-btn" onclick="setDifficulty('dificil')">Difícil (100 XP)</button>
+</div>
+
+<!-- Label para data limite -->
+<div class="input-label">Data limite (opcional)</div>
 <input type="date" id="dueDate">
+
 <button onclick="addQuest()">Adicionar missão</button>
 
 <div id="questList"></div>
@@ -302,6 +362,12 @@ XP: <span id="xp"></span>/<span id="next"></span>
 <div id="achievementList"></div>
 </div>
 
+<!-- NOVA SEÇÃO: MISSÕES RECEBIDAS -->
+<div class="box" id="inboxBox">
+  <h2>📬 Missões Recebidas</h2>
+  <div id="inboxList"></div>
+</div>
+
 </div>
 
 <script>
@@ -309,7 +375,8 @@ let xp=0, level=1, nextLevel=100;
 let quests=[], conquistas=[];
 let currentTab="principal";
 let lastDailyReset=null;
-let currentUserEmail=null;
+let currentUser = null; // objeto do Firebase Auth
+let currentDifficulty = 'facil';
 
 let passwordVisible = false;
 
@@ -320,6 +387,31 @@ function togglePassword(){
   passInput.type = passwordVisible ? "text" : "password";
 }
 
+// Monitor de autenticação
+auth.onAuthStateChanged(user => {
+  if (user) {
+    currentUser = user;
+    currentUserEmail = user.email;
+    document.getElementById("authBox").style.display = "none";
+    document.getElementById("mainApp").style.display = "block";
+    // Cria/atualiza documento do usuário na coleção 'users'
+    db.collection("users").doc(user.uid).set({
+      email: user.email,
+      displayName: user.email.split('@')[0],
+      lastLogin: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    loadData(user.email);
+    setupInboxListener(); // listener em tempo real para novas missões
+    loadInbox(); // carrega as pendentes
+  } else {
+    // Usuário deslogado
+    currentUser = null;
+    currentUserEmail = null;
+    document.getElementById("authBox").style.display = "block";
+    document.getElementById("mainApp").style.display = "none";
+  }
+});
+
 // Cadastro de usuário
 function signupUser(){
   const email = document.getElementById("email").value.trim();
@@ -327,12 +419,8 @@ function signupUser(){
   if(!email || !password) return alert("Preencha e-mail e senha");
 
   auth.createUserWithEmailAndPassword(email,password)
-      .then(()=> {
-          currentUserEmail = email;
-          db.collection("users").doc(email).set({xp:0, level:1, quests:[], conquistas:[]});
-          document.getElementById("authBox").style.display="none";
-          document.getElementById("mainApp").style.display="block";
-          loadData(email);
+      .then((cred) => {
+          // O onAuthStateChanged vai tratar o resto
       })
       .catch(err => alert(err.message));
 }
@@ -344,12 +432,6 @@ function loginUser(){
   if(!email || !password) return alert("Preencha e-mail e senha");
 
   auth.signInWithEmailAndPassword(email,password)
-      .then(()=> {
-          currentUserEmail = email;
-          document.getElementById("authBox").style.display="none";
-          document.getElementById("mainApp").style.display="block";
-          loadData(email);
-      })
       .catch(err => alert(err.message));
 }
 
@@ -360,13 +442,13 @@ function logout(){
 
 function saveData(){
     if(!currentUserEmail) return;
-    db.collection("users").doc(currentUserEmail).set({
+    db.collection("users").doc(currentUser.uid).set({
         xp, level, quests, conquistas
-    });
+    }, { merge: true });
 }
 
 function loadData(email){
-    db.collection("users").doc(email).get().then(doc=>{
+    db.collection("users").doc(currentUser.uid).get().then(doc=>{
         if(doc.exists){
             const data=doc.data();
             quests=data.quests||[];
@@ -380,17 +462,17 @@ function loadData(email){
 }
 
 function resetarTudo(){
-    if(!currentUserEmail) return;
+    if(!currentUser) return;
     if(confirm("Tem certeza que deseja resetar tudo?")){
-        db.collection("users").doc(currentUserEmail).set({
+        db.collection("users").doc(currentUser.uid).set({
             xp:0,
             level:1,
             quests:[],
             conquistas:[]
-        });
+        }, { merge: true });
         xp = 0;
         level = 1;
-        nextLevel = 100; // <--- ADICIONE ESTA LINHA
+        nextLevel = 100;
         quests = [];
         conquistas = [];
         updateStatus();
@@ -429,13 +511,24 @@ function switchTab(tab,e){
     render();
 }
 
+function setDifficulty(diff){
+    currentDifficulty = diff;
+    document.querySelectorAll(".difficulty-btn").forEach(btn => {
+        btn.classList.remove("active");
+    });
+    event.target.classList.add("active");
+}
+
 function addQuest(){
     const text=document.getElementById("questText").value;
     const reward=document.getElementById("rewardText").value;
     const due=document.getElementById("dueDate").value;
     if(!text) return;
 
-    const xpReward=currentTab==="principal"?100:currentTab==="secundaria"?30:20;
+    let xpReward;
+    if (currentDifficulty === 'facil') xpReward = 20;
+    else if (currentDifficulty === 'medio') xpReward = 50;
+    else xpReward = 100;
 
     quests.push({id:Date.now(),text,type:currentTab,done:false,xpReward,reward,dueDate:due});
     document.getElementById("questText").value="";
@@ -463,6 +556,207 @@ function checkDailyReset(){
     }
 }
 
+// ========== FUNÇÕES DE COMPARTILHAMENTO ==========
+
+// Busca um usuário pelo email na coleção 'users'
+function findUserByEmail(email) {
+  return db.collection("users").where("email", "==", email).get()
+    .then(snapshot => {
+      if (snapshot.empty) {
+        alert("Usuário não encontrado!");
+        return null;
+      }
+      // Retorna o primeiro documento (deve ser único)
+      return snapshot.docs[0];
+    });
+}
+
+// Envia uma missão para outro usuário
+function shareQuest(quest) {
+  if (!currentUser) return alert("Faça login primeiro!");
+  
+  const targetEmail = prompt("Email do usuário para enviar esta missão:");
+  if (!targetEmail || !targetEmail.includes('@')) return;
+  
+  findUserByEmail(targetEmail).then(targetDoc => {
+    if (!targetDoc) return;
+    
+    const targetUserId = targetDoc.id;
+    const targetData = targetDoc.data();
+    
+    // Cria o documento da missão compartilhada
+    const sharedQuestRef = db.collection("shared_quests").doc();
+    
+    sharedQuestRef.set({
+      title: quest.text,
+      difficulty: quest.xpReward === 20 ? 'facil' : (quest.xpReward === 50 ? 'medio' : 'dificil'),
+      xpReward: quest.xpReward,
+      reward: quest.reward || "",
+      dueDate: quest.dueDate || "",
+      fromUserId: currentUser.uid,
+      fromUserEmail: currentUser.email,
+      toUserId: targetUserId,
+      toUserEmail: targetEmail,
+      status: "pending",
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(() => {
+      // Adiciona à inbox do destinatário
+      db.collection("users").doc(targetUserId)
+        .collection("inbox").doc(sharedQuestRef.id).set({
+          sharedQuestId: sharedQuestRef.id,
+          read: false,
+          receivedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      
+      alert("Missão enviada com sucesso!");
+    });
+  });
+}
+
+// Carrega as missões recebidas (inbox)
+function loadInbox() {
+  if (!currentUser) return;
+  
+  const inboxDiv = document.getElementById("inboxList");
+  inboxDiv.innerHTML = ""; // limpa
+  
+  db.collection("users").doc(currentUser.uid)
+    .collection("inbox")
+    .where("read", "==", false)
+    .get()
+    .then(snapshot => {
+      snapshot.forEach(doc => {
+        const inboxItem = doc.data();
+        // Busca os detalhes da missão compartilhada
+        db.collection("shared_quests").doc(inboxItem.sharedQuestId)
+          .get()
+          .then(questDoc => {
+            if (questDoc.exists) {
+              renderInboxItem(questDoc.data(), doc.id);
+            }
+          });
+      });
+    });
+}
+
+// Renderiza um item da inbox
+function renderInboxItem(sharedQuest, inboxDocId) {
+  const inboxDiv = document.getElementById("inboxList");
+  
+  const div = document.createElement("div");
+  div.className = "quest shared-quest";
+  
+  const titleSpan = document.createElement("span");
+  titleSpan.innerText = `📨 ${sharedQuest.title}`;
+  
+  const infoDiv = document.createElement("div");
+  infoDiv.className = "extraInfo";
+  
+  const fromSpan = document.createElement("span");
+  fromSpan.innerText = `👤 De: ${sharedQuest.fromUserEmail}`;
+  
+  const diffSpan = document.createElement("span");
+  let diffText = '';
+  if (sharedQuest.difficulty === 'facil') diffText = '⚡ Fácil';
+  else if (sharedQuest.difficulty === 'medio') diffText = '⚡⚡ Médio';
+  else diffText = '⚡⚡⚡ Difícil';
+  diffSpan.innerText = diffText;
+  
+  infoDiv.appendChild(fromSpan);
+  infoDiv.appendChild(diffSpan);
+  
+  if (sharedQuest.reward) {
+    const rewardSpan = document.createElement("span");
+    rewardSpan.innerText = `🎁 ${sharedQuest.reward}`;
+    infoDiv.appendChild(rewardSpan);
+  }
+  if (sharedQuest.dueDate) {
+    const dateSpan = document.createElement("span");
+    const due = new Date(sharedQuest.dueDate);
+    dateSpan.innerText = `⏰ ${due.toLocaleDateString()}`;
+    infoDiv.appendChild(dateSpan);
+  }
+  
+  const btnDiv = document.createElement("div");
+  btnDiv.className = "btnContainer";
+  
+  const acceptBtn = document.createElement("button");
+  acceptBtn.innerText = "✅ Aceitar";
+  acceptBtn.className = "acceptBtn";
+  acceptBtn.onclick = () => {
+    // Adiciona a missão à lista do usuário
+    quests.push({
+      id: Date.now(),
+      text: sharedQuest.title,
+      type: "principal", // sempre principal? pode ser configurável
+      done: false,
+      xpReward: sharedQuest.xpReward,
+      reward: sharedQuest.reward,
+      dueDate: sharedQuest.dueDate
+    });
+    
+    // Atualiza status no shared_quests
+    db.collection("shared_quests").doc(sharedQuest.id).update({
+      status: "accepted",
+      acceptedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    
+    // Marca como lida na inbox
+    db.collection("users").doc(currentUser.uid)
+      .collection("inbox").doc(inboxDocId).update({
+        read: true
+      });
+    
+    saveData();
+    render();
+    loadInbox(); // recarrega a inbox
+  };
+  
+  const rejectBtn = document.createElement("button");
+  rejectBtn.innerText = "❌ Recusar";
+  rejectBtn.className = "rejectBtn";
+  rejectBtn.onclick = () => {
+    // Opcional: notificar o remetente? Por enquanto só remove
+    db.collection("users").doc(currentUser.uid)
+      .collection("inbox").doc(inboxDocId).update({
+        read: true
+      });
+    db.collection("shared_quests").doc(sharedQuest.id).update({
+      status: "rejected"
+    });
+    loadInbox();
+  };
+  
+  btnDiv.appendChild(acceptBtn);
+  btnDiv.appendChild(rejectBtn);
+  
+  div.appendChild(titleSpan);
+  div.appendChild(infoDiv);
+  div.appendChild(btnDiv);
+  
+  inboxDiv.appendChild(div);
+}
+
+// Listener em tempo real para novas missões recebidas
+function setupInboxListener() {
+  if (!currentUser) return;
+  
+  db.collection("users").doc(currentUser.uid)
+    .collection("inbox")
+    .where("read", "==", false)
+    .onSnapshot(snapshot => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === "added") {
+          // Pode tocar um som ou mostrar uma notificação
+          alert("🎉 Nova missão recebida!");
+          loadInbox(); // recarrega a inbox
+        }
+      });
+    });
+}
+
+// ========== RENDERIZAÇÃO PRINCIPAL ==========
+
 function render(){
     checkDailyReset();
     const qList=document.getElementById("questList");
@@ -470,67 +764,101 @@ function render(){
     qList.innerHTML="";
     aList.innerHTML="";
 
-quests.filter(q => q.type === currentTab).forEach(q => {
-    const div = document.createElement("div");
-    div.className = "quest " + q.type;
+    quests.filter(q => q.type === currentTab).forEach(q => {
+        const div = document.createElement("div");
+        div.className = "quest " + q.type;
 
-    const span = document.createElement("span");
-    span.innerText = q.text;
+        const span = document.createElement("span");
+        span.innerText = q.text;
 
-    // ✅ Indicação de missão diária completa
-    if (q.type === "diaria" && q.done) {
-        span.innerText += " ✅"; // Adiciona o ✅ ao lado do texto
-        span.classList.add("completed"); // Mantém o estilo de completed
-    }
+        if (q.type === "diaria" && q.done) {
+            span.innerText += " ✅";
+            span.classList.add("completed");
+        }
 
-    const info = document.createElement("div");
-    info.className = "extraInfo";
-    if (q.reward) info.innerHTML += "🎁 " + q.reward + "<br>";
-    if (q.dueDate) {
-        const due = new Date(q.dueDate);
-        const today = new Date();
-        if (today > due && !q.done) info.innerHTML += "⏰ <span class='overdue'>ATRASADA</span>";
-        else info.innerHTML += "⏰ " + due.toLocaleDateString();
-    }
+        const info = document.createElement("div");
+        info.className = "extraInfo";
 
-    const btnContainer = document.createElement("div");
-    btnContainer.className = "btnContainer";
+        // Ícone de dificuldade
+        let difficultyIcon = '';
+        let difficultyText = '';
+        if (q.xpReward === 20) { difficultyIcon = '⚡'; difficultyText = 'Fácil'; }
+        else if (q.xpReward === 50) { difficultyIcon = '⚡⚡'; difficultyText = 'Médio'; }
+        else if (q.xpReward === 100) { difficultyIcon = '⚡⚡⚡'; difficultyText = 'Difícil'; }
 
-    const done = document.createElement("button");
-    done.innerText = "✔";
-    done.onclick = () => {
-        if (q.done) return;
-        if (q.type === "diaria") q.done = true;
-        gainXP(q.xpReward);
-        if (q.reward) alert("🎁 Recompensa: " + q.reward);
-        if (q.type !== "diaria") quests = quests.filter(x => x.id !== q.id);
-        saveData();
-        render();
-    };
+        if (difficultyText) {
+            const diffSpan = document.createElement('span');
+            diffSpan.innerHTML = `${difficultyIcon} ${difficultyText}`;
+            info.appendChild(diffSpan);
+        }
 
-    const del = document.createElement("button");
-    del.innerText = "X";
-    del.className = "deleteBtn";
-    del.onclick = () => {
-        quests = quests.filter(x => x.id !== q.id);
-        saveData();
-        render();
-    };
+        if (q.reward) {
+            const rewardSpan = document.createElement('span');
+            rewardSpan.innerHTML = `🎁 ${q.reward}`;
+            info.appendChild(rewardSpan);
+        }
+        if (q.dueDate) {
+            const dueSpan = document.createElement('span');
+            const due = new Date(q.dueDate);
+            const today = new Date();
+            due.setHours(0,0,0,0);
+            today.setHours(0,0,0,0);
+            if (today > due && !q.done) {
+                dueSpan.innerHTML = `⏰ <span class='overdue'>ATRASADA</span>`;
+            } else {
+                dueSpan.innerHTML = `⏰ ${due.toLocaleDateString()}`;
+            }
+            info.appendChild(dueSpan);
+        }
 
-    const reactivate = document.createElement("button");
-    reactivate.innerText = "♻️";
-    reactivate.className = "reactivateBtn";
-    reactivate.onclick = () => {
-        if (q.type === "diaria") { q.done = false; saveData(); render(); }
-    };
-    if (q.type === "diaria") btnContainer.append(done, del, reactivate);
-    else btnContainer.append(done, del);
+        const btnContainer = document.createElement("div");
+        btnContainer.className = "btnContainer";
 
-    div.append(span, info, btnContainer);
-    qList.appendChild(div);
-});
+        const done = document.createElement("button");
+        done.innerText = "✔";
+        done.onclick = () => {
+            if (q.done) return;
+            if (q.type === "diaria") q.done = true;
+            gainXP(q.xpReward);
+            if (q.reward) alert("🎁 Recompensa: " + q.reward);
+            if (q.type !== "diaria") quests = quests.filter(x => x.id !== q.id);
+            saveData();
+            render();
+        };
 
-        conquistas.forEach(c=>{
+        const del = document.createElement("button");
+        del.innerText = "X";
+        del.className = "deleteBtn";
+        del.onclick = () => {
+            quests = quests.filter(x => x.id !== q.id);
+            saveData();
+            render();
+        };
+
+        // Botão de compartilhar
+        const share = document.createElement("button");
+        share.innerText = "📤";
+        share.className = "shareBtn";
+        share.onclick = () => shareQuest(q);
+
+        if (q.type === "diaria") {
+            const reactivate = document.createElement("button");
+            reactivate.innerText = "♻️";
+            reactivate.className = "reactivateBtn";
+            reactivate.onclick = () => {
+                if (q.type === "diaria") { q.done = false; saveData(); render(); }
+            };
+            btnContainer.append(done, del, reactivate, share);
+        } else {
+            btnContainer.append(done, del, share);
+        }
+
+        div.append(span, info, btnContainer);
+        qList.appendChild(div);
+    });
+
+    // Conquistas
+    conquistas.forEach(c=>{
         const div=document.createElement("div");
         div.className="quest conquista";
         if(c.done) div.classList.add("unlocked");
@@ -581,5 +909,4 @@ function toggleMenu(){
 }
 </script>
 </body>
-
 </html>
